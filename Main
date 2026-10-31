@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Parking Guidance Map</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700&display=swap">
+<style>
+/* Layout: programme bar, title, trip panel (left) beside a site-plan map drawn from the team's paper model (right), demo controls across the bottom. Road-signage look: condensed caps, blue sign accent, green/red only for lot status. */
+:root {
+  --bg: #EEF1F6;
+  --surface: #FFFFFF;
+  --ink: #0F1F3A;
+  --muted: #566783;
+  --line: #D3DBE8;
+  --sign: #0B4F9C;
+  --on-sign: #FFFFFF;
+  --ok: #17803F;
+  --ok-bg: #E3F4E9;
+  --full: #B92B2B;
+  --full-bg: #FBE6E6;
+  --warn: #84560A;
+  --warn-bg: #FFF1D6;
+  --map: #FAFBFD;
+  --block: #FFFFFF;
+  --block-edge: #8E9AB0;
+  --road: #E3E8F0;
+  --hatch: #B7A19A;
+  --route: #0B4F9C;
+  --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --font-body: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0B1322; --surface: #131E35; --ink: #E8EEF9; --muted: #93A3BF; --line: #26344F;
+    --sign: #3A7BD5; --on-sign: #FFFFFF; --ok: #5ACB86; --ok-bg: #12301F; --full: #FF8080; --full-bg: #3A1B20;
+    --warn: #F2B84B; --warn-bg: #332A10; --map: #0F1A2F; --block: #18243D; --block-edge: #4A5B7C;
+    --road: #22314F; --hatch: #7A6660; --route: #6EA8F2;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0B1322; --surface: #131E35; --ink: #E8EEF9; --muted: #93A3BF; --line: #26344F;
+  --sign: #3A7BD5; --on-sign: #FFFFFF; --ok: #5ACB86; --ok-bg: #12301F; --full: #FF8080; --full-bg: #3A1B20;
+  --warn: #F2B84B; --warn-bg: #332A10; --map: #0F1A2F; --block: #18243D; --block-edge: #4A5B7C;
+  --road: #22314F; --hatch: #7A6660; --route: #6EA8F2;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.5;
+  padding-block: 20px 32px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 1240px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
+button, select { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--route); outline-offset: 2px; }
+
+.topbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; }
+.topbar .tag { background: var(--sign); color: var(--on-sign); font-weight: 600; padding: 6px 14px; border-radius: 6px; }
+.topbar .name { flex: 1 1 260px; background: var(--sign); color: var(--on-sign); padding: 6px 14px; border-radius: 6px; }
+.topbar .step { color: var(--muted); align-self: center; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; }
+
+h1 { font-family: var(--font-display); font-weight: 700; text-transform: uppercase; letter-spacing: .02em; font-size: clamp(38px, 7vw, 60px); line-height: 1; margin: 0; text-wrap: balance; }
+.lead { max-width: 62ch; margin: 10px 0 0; color: var(--muted); font-size: 17px; }
+
+.main { display: grid; grid-template-columns: minmax(0, 380px) minmax(0, 1fr); gap: 24px; align-items: start; }
+@media (max-width: 960px) { .main { grid-template-columns: minmax(0, 1fr); } }
+.side { display: flex; flex-direction: column; gap: 22px; min-width: 0; }
+.label { font-family: var(--font-display); font-size: 15px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; margin: 0 0 8px; display: block; }
+
+select#dest { width: 100%; padding: 11px 12px; background: var(--surface); border: 1.5px solid var(--line); border-radius: 6px; font-size: 16px; }
+.seg { display: grid; grid-template-columns: 1fr 1fr; border: 1.5px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--surface); }
+.seg button { padding: 11px 8px; border: 0; background: transparent; cursor: pointer; font-weight: 500; }
+.seg button + button { border-left: 1.5px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--sign); color: var(--on-sign); font-weight: 600; }
+.find { margin-top: 14px; width: 100%; padding: 13px; background: var(--ink); color: var(--bg); border: 0; border-radius: 6px; font-weight: 600; font-size: 16px; cursor: pointer; }
+
+.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.steps li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 10px; align-items: start; color: var(--muted); }
+.steps .dot { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--line); display: grid; place-items: center; font-size: 12px; font-weight: 700; color: var(--on-sign); }
+.steps li.done { color: var(--ink); }
+.steps li.done .dot { background: var(--sign); border-color: var(--sign); }
+.steps li.done .dot::after { content: "\2713"; }
+.steps small { display: block; color: var(--muted); font-size: 13px; }
+
+.result { border-radius: 10px; padding: 16px 16px 14px; border: 1.5px solid; display: flex; flex-direction: column; gap: 10px; }
+.result.ok { background: var(--ok-bg); border-color: var(--ok); }
+.result.warn { background: var(--warn-bg); border-color: var(--warn); }
+.result.full { background: var(--full-bg); border-color: var(--full); }
+.result.wait { background: var(--surface); border-color: var(--line); color: var(--muted); }
+.pill { margin: 0; font-family: var(--font-display); text-transform: uppercase; letter-spacing: .08em; font-weight: 700; font-size: 14px; }
+.ok .pill { color: var(--ok); } .warn .pill { color: var(--warn); } .full .pill { color: var(--full); }
+.result h2 { margin: 0; font-family: var(--font-display); font-size: 30px; line-height: 1.05; text-transform: uppercase; text-wrap: balance; }
+.result p { margin: 0; }
+.chain { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.chain li { padding: 8px 10px; border-radius: 6px; background: var(--surface); border-left: 5px solid; }
+.chain li.bad { border-color: var(--full); }
+.chain li.good { border-color: var(--ok); }
+.go { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 13px 18px; background: var(--sign); color: var(--on-sign); text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 16px; }
+.hint { font-size: 13px; color: var(--muted); margin: 0; }
+
+.mapbox { background: var(--surface); border: 1.5px solid var(--line); border-radius: 10px; padding: 10px; min-width: 0; position: sticky; top: 12px; }
+@media (max-width: 960px) { .mapbox { position: static; } }
+.mapscroll { overflow-x: auto; }
+svg { display: block; width: 100%; min-width: 560px; height: auto; border-radius: 6px; background: var(--map); }
+.s-road { stroke: var(--road); stroke-width: 20; stroke-linecap: square; fill: none; }
+.s-block { fill: var(--block); stroke: var(--block-edge); stroke-width: 1.5; }
+.s-lot { fill: url(#hatch); stroke: var(--block-edge); stroke-width: 1.5; }
+.h-bg { fill: var(--map); }
+.h-line { stroke: var(--hatch); stroke-width: 2.5; }
+.s-route { stroke: var(--route); stroke-width: 7; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+.s-walk { stroke: var(--ink); stroke-width: 4; stroke-dasharray: 1 9; stroke-linecap: round; stroke-linejoin: round; fill: none; transition: opacity .3s; }
+.pin { stroke: var(--surface); stroke-width: 3; }
+.pin.ok { fill: var(--ok); } .pin.full { fill: var(--full); }
+.pin-t { fill: #fff; font-family: var(--font-display); font-weight: 700; font-size: 16px; text-anchor: middle; dominant-baseline: central; }
+.b-name { fill: var(--ink); font-family: var(--font-display); font-weight: 700; font-size: 30px; text-anchor: middle; letter-spacing: .04em; }
+.b-minor { fill: var(--muted); font-family: var(--font-display); font-weight: 600; font-size: 20px; text-anchor: middle; letter-spacing: .04em; }
+.b-stat { font-family: var(--font-body); font-weight: 600; font-size: 17px; text-anchor: middle; }
+.b-stat.ok { fill: var(--ok); } .b-stat.full { fill: var(--full); }
+.hl { fill: none; stroke: var(--ink); stroke-width: 3; stroke-dasharray: 8 6; }
+.gate-t { fill: var(--ink); font-family: var(--font-display); font-weight: 700; font-size: 19px; letter-spacing: .03em; }
+.gate { fill: var(--ink); }
+.note { fill: var(--muted); font-size: 14px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; padding: 10px 4px 2px; color: var(--muted); font-size: 13px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+.sw.hatch { border-radius: 2px; background: repeating-linear-gradient(45deg, var(--hatch) 0 2px, transparent 2px 5px); border: 1px solid var(--block-edge); }
+.ln { width: 22px; height: 0; border-top: 4px solid var(--route); display: inline-block; }
+.ln.dash { border-top: 3px dotted var(--ink); }
+
+.demo { border-top: 2px solid var(--ink); padding-top: 12px; display: flex; flex-direction: column; gap: 14px; }
+.demo-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.presets { display: flex; flex-wrap: wrap; gap: 8px; }
+.presets button { background: var(--surface); border: 1.5px solid var(--line); border-radius: 6px; padding: 7px 12px; cursor: pointer; font-size: 14px; font-weight: 500; }
+.lots { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.lot { background: var(--surface); border: 1.5px solid var(--line); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.lot-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+.lot-head b { white-space: nowrap; font-family: var(--font-display); letter-spacing: .04em; font-size: 20px; }
+.lot-head span { color: var(--muted); font-size: 13px; }
+.row { display: grid; grid-template-columns: 82px minmax(0, 1fr) auto; align-items: center; gap: 10px; }
+.row .free { font-variant-numeric: tabular-nums; color: var(--muted); }
+.row .free strong { color: var(--ink); font-size: 16px; }
+.step-btns { display: inline-flex; gap: 6px; }
+.step-btns button { width: 34px; height: 34px; border-radius: 6px; border: 1.5px solid var(--line); background: var(--bg); cursor: pointer; font-size: 18px; line-height: 1; }
+
+footer { color: var(--muted); font-size: 13px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 24px; border-top: 1.5px solid var(--line); padding-top: 12px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <span class="tag">S2C3</span>
+    <span class="name">Department Based Shared Parking</span>
+    <span class="step">Step 6 &middot; Guidance map &amp; navigation</span>
+  </div>
+
+  <header>
+    <h1>Parking Guidance Map</h1>
+    <p class="lead">Check a campus lot before you arrive. If it is full, the map sends you to the nearest lot that has space for your vehicle.</p>
+  </header>
+
+  <div class="main">
+    <div class="side">
+      <section aria-label="Plan your trip">
+        <label class="label" for="dest">Where are you going?</label>
+        <select id="dest">
+          <option value="vmcc">Victor Menezes Convention Centre (VMCC)</option>
+          <option value="rbtic">Rahul Bajaj Technology Innovation Centre (RBTIC)</option>
+          <option value="cese">Centre for Environmental Science &amp; Engg. (CESE)</option>
+        </select>
+        <span class="label" style="margin-top:14px" id="vlabel">Your vehicle</span>
+        <div class="seg" role="group" aria-labelledby="vlabel">
+          <button type="button" data-type="4W" aria-pressed="true">Car &middot; 4-wheeler</button>
+          <button type="button" data-type="2W" aria-pressed="false">Bike &middot; 2-wheeler</button>
+        </div>
+        <button type="button" class="find" id="find">Find parking</button>
+      </section>
+
+      <section aria-label="Result" aria-live="polite" id="result"></section>
+
+      <section aria-label="What the system did">
+        <span class="label">What the system did</span>
+        <ol class="steps" id="steps"></ol>
+      </section>
+    </div>
+
+    <div class="mapbox">
+      <div class="mapscroll">
+      <svg id="map" viewBox="0 0 1000 640" role="img" aria-label="Site plan of the VMCC, RBTIC and CESE area of IIT Bombay with parking lots P1, P2 and P3 and the route to the lot that has space">
+        <defs>
+          <pattern id="hatch" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <rect class="h-bg" width="10" height="10"/>
+            <line class="h-line" x1="0" y1="0" x2="0" y2="10"/>
+          </pattern>
+        </defs>
+
+        <!-- roads -->
+        <path class="s-road" d="M20 215 H980 M840 0 V610 M470 215 V610 M150 215 V610 M470 425 H840 M20 610 H980"/>
+
+        <!-- surrounding buildings -->
+        <rect class="s-block" x="20" y="40" width="110" height="150" rx="2"/>
+        <rect class="s-block" x="170" y="40" width="190" height="150" rx="2"/>
+        <rect class="s-block" x="395" y="40" width="160" height="150" rx="2"/>
+        <rect class="s-block" x="590" y="40" width="220" height="150" rx="2"/>
+        <rect class="s-block" x="870" y="60" width="110" height="130" rx="2"/>
+        <rect class="s-block" x="20" y="240" width="110" height="345" rx="2"/>
+        <rect class="s-block" x="190" y="450" width="160" height="135" rx="2"/>
+        <rect class="s-block" x="690" y="450" width="125" height="135" rx="2"/>
+        <rect class="s-block" x="870" y="240" width="110" height="175" rx="2"/>
+        <rect class="s-block" x="870" y="445" width="110" height="140" rx="2"/>
+        <text class="b-minor" x="265" y="123">IDC</text>
+        <text class="b-minor" x="270" y="525">CSRE</text>
+        <text class="b-minor" x="925" y="335">MONASH</text>
+
+        <!-- parking lots -->
+        <rect class="s-lot" x="385" y="240" width="70" height="55"/>
+        <path class="s-lot" fill-rule="evenodd" d="M560 240 H805 V410 H560 Z M595 270 V380 H770 V270 Z"/>
+        <rect class="s-lot" x="490" y="445" width="50" height="140"/>
+
+        <!-- destination buildings -->
+        <rect class="s-block" x="175" y="245" width="195" height="175" rx="2"/>
+        <rect class="s-block" x="595" y="270" width="175" height="110" rx="2"/>
+        <rect class="s-block" x="560" y="450" width="110" height="135" rx="2"/>
+        <text class="b-name" x="272" y="330">VMCC</text>
+        <text class="b-stat" x="272" y="360" id="s-vmcc"></text>
+        <text class="b-name" x="682" y="322">RBTIC</text>
+        <text class="b-stat" x="682" y="352" id="s-rbtic"></text>
+        <text class="b-name" x="615" y="510" style="font-size:26px">CESE</text>
+        <text class="b-stat" x="615" y="538" id="s-cese" style="font-size:15px"></text>
+
+        <rect id="hl" class="hl" x="0" y="0" width="0" height="0" rx="6"/>
+
+        <path id="route" class="s-route" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1" d=""/>
+        <path id="walk" class="s-walk" d="" style="opacity:0"/>
+
+        <!-- entry -->
+        <rect class="gate" x="828" y="4" width="24" height="18" rx="3"/>
+        <text class="gate-t" x="818" y="24" text-anchor="end">From Main Gate</text>
+
+        <!-- lot pins -->
+        <g transform="translate(420,267)"><circle id="pin-vmcc" class="pin" r="16"/><text class="pin-t">P1</text></g>
+        <g transform="translate(578,325)"><circle id="pin-rbtic" class="pin" r="16"/><text class="pin-t">P2</text></g>
+        <g transform="translate(515,490)"><circle id="pin-cese" class="pin" r="16"/><text class="pin-t">P3</text></g>
+
+        <text class="note" x="985" y="632" text-anchor="end">Based on the team's site-plan model. Not to scale.</text>
+      </svg>
+      </div>
+      <div class="legend">
+        <span><i class="sw hatch"></i>Parking lot</span>
+        <span><i class="sw" style="background:var(--ok)"></i>Space available</span>
+        <span><i class="sw" style="background:var(--full)"></i>Full</span>
+        <span><i class="ln"></i>Drive to this lot</span>
+        <span><i class="ln dash"></i>Walk to destination</span>
+      </div>
+    </div>
+  </div>
+
+  <section class="demo" aria-label="Demo controls">
+    <div class="demo-head">
+      <div>
+        <span class="label" style="margin:0">Demo controls</span>
+        <p class="hint">Change free spaces to see the map react. When a lot reaches zero, the trip moves to the next lot.</p>
+      </div>
+      <div class="presets">
+        <button type="button" data-preset="1">Scenario 1: VMCC full</button>
+        <button type="button" data-preset="2">Scenario 2: VMCC and RBTIC full</button>
+        <button type="button" data-preset="0">All lots open</button>
+      </div>
+    </div>
+    <div class="lots" id="lotctl"></div>
+  </section>
+
+  <footer>
+    <span>Free-space numbers are simulated. In the full system they come from gate cameras and slot sensors.</span>
+    <span>Utkarsh &middot; Divit &middot; Sarthak &middot; Soham &middot; Anvi &middot; Aaryan &middot; Design Thinking &amp; Innovation, IDC School of Design</span>
+  </footer>
+</div>
+
+<script>
+const TYPES = {
+  '4W': { label: '4-wheeler', noun: 'car' },
+  '2W': { label: '2-wheeler', noun: 'bike' }
+};
+const LOTS = {
+  vmcc:  { lot: 'P1', short: 'VMCC',  name: 'Victor Menezes Convention Centre',
+           query: 'Victor Menezes Convention Centre, IIT Bombay, Powai, Mumbai',
+           cap: { '4W': 10, '2W': 14 }, box: [165, 235, 215, 195] },
+  rbtic: { lot: 'P2', short: 'RBTIC', name: 'Rahul Bajaj Technology Innovation Centre',
+           query: 'Rahul Bajaj Technology Innovation Centre, IIT Bombay, Powai, Mumbai',
+           cap: { '4W': 30, '2W': 40 }, box: [550, 230, 265, 190] },
+  cese:  { lot: 'P3', short: 'CESE',  name: 'Centre for Environmental Science and Engineering',
+           query: 'Centre for Environmental Science and Engineering, IIT Bombay, Powai, Mumbai',
+           cap: { '4W': 12, '2W': 23 }, box: [480, 437, 200, 156] }
+};
+// Order in which lots are checked for each destination, nearest first.
+const CHAIN = {
+  vmcc:  ['vmcc', 'rbtic', 'cese'],
+  rbtic: ['rbtic', 'cese', 'vmcc'],
+  cese:  ['cese', 'rbtic', 'vmcc']
+};
+const PRESETS = {
+  0: { vmcc: 'cap', rbtic: 'cap', cese: 'cap' },
+  1: { vmcc: 0, rbtic: 'cap', cese: 'cap' },
+  2: { vmcc: 0, rbtic: 0, cese: 'cap' }
+};
+const ROUTE = {
+  vmcc:  'M840 10 V215 H420 V251',
+  rbtic: 'M840 10 V215 H470 V325 H562',
+  cese:  'M840 10 V215 H470 V490 H499'
+};
+const WALK = {
+  'rbtic>vmcc': 'M578 341 V360 H372',
+  'cese>vmcc':  'M499 490 L372 410',
+  'vmcc>rbtic': 'M420 283 V300 H593',
+  'cese>rbtic': 'M515 474 V425 H650 V382',
+  'vmcc>cese':  'M436 283 H470 V515 H558',
+  'rbtic>cese': 'M578 341 V425 H612 V448'
+};
+
+const free = {};
+const state = { dest: 'vmcc', type: '4W', stage: 3 };
+let timers = [];
+let lastRoute = '';
+
+function applyPreset(id) {
+  const p = PRESETS[id];
+  for (const k in LOTS) {
+    free[k] = {};
+    for (const t in TYPES) free[k][t] = p[k] === 'cap' ? LOTS[k].cap[t] : p[k];
+  }
+}
+applyPreset(1);
+
+const $ = (id) => document.getElementById(id);
+const plural = (type, n) => TYPES[type].noun + (n === 1 ? '' : 's');
+const tag = (k) => LOTS[k].lot + ' ' + LOTS[k].short;
+
+function pickLot(destKey, type) {
+  const chain = CHAIN[destKey];
+  const idx = chain.findIndex((k) => free[k][type] > 0);
+  return { lot: idx === -1 ? null : chain[idx], checked: idx === -1 ? chain : chain.slice(0, idx + 1) };
+}
+
+const mapsUrl = (key) =>
+  'https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=' + encodeURIComponent(LOTS[key].query);
+
+function goButton(key) {
+  return '<a class="go" href="' + mapsUrl(key) + '" target="_blank" rel="noopener">Open ' + LOTS[key].short +
+    ' in Google Maps <span aria-hidden="true">&#8599;</span></a>' +
+    '<p class="hint">Opens Google Maps in a new tab with driving directions from your current location.</p>';
+}
+
+function chainList(pick, type) {
+  return '<ul class="chain">' + pick.checked.map((k) => {
+    const n = free[k][type];
+    return '<li class="' + (n > 0 ? 'good' : 'bad') + '"><b>' + tag(k) + '</b> &middot; ' +
+      n + ' of ' + LOTS[k].cap[type] + ' ' + plural(type, 2) + ' free</li>';
+  }).join('') + '</ul>';
+}
+
+function renderResult(pick) {
+  const { dest, type, stage } = state;
+  const d = LOTS[dest];
+  const el = $('result');
+  if (stage < 3) {
+    el.innerHTML = '<div class="result wait"><p class="pill">Checking</p><p>Looking up free ' + TYPES[type].label + ' spaces near ' + d.short + '&hellip;</p></div>';
+    return;
+  }
+  if (!pick.lot) {
+    el.innerHTML = '<div class="result full"><p class="pill">No space</p><h2>No ' + TYPES[type].label + ' space nearby</h2>' +
+      chainList(pick, type) + '<p>Every nearby lot is full for this vehicle type. Try again shortly.</p></div>';
+    return;
+  }
+  const lot = LOTS[pick.lot];
+  if (pick.lot === dest) {
+    el.innerHTML = '<div class="result ok"><p class="pill">Space available</p><h2>Park at ' + lot.lot + ' ' + lot.short + '</h2>' +
+      '<p>' + free[pick.lot][type] + ' of ' + lot.cap[type] + ' ' + plural(type, 2) + ' free at ' + lot.name + '.</p>' + goButton(pick.lot) + '</div>';
+    return;
+  }
+  el.innerHTML = '<div class="result warn"><p class="pill">Lot full, rerouted</p><h2>Go to ' + lot.lot + ' ' + lot.short + ' instead</h2>' +
+    chainList(pick, type) +
+    '<p>Park at ' + lot.short + ', then walk to ' + d.short + ' (dotted line on the map).</p>' + goButton(pick.lot) + '</div>';
+}
+
+function renderSteps(pick) {
+  const { dest, type, stage } = state;
+  const full = pick.checked.filter((k) => free[k][type] === 0).map((k) => LOTS[k].short);
+  const checkText = !pick.lot ? 'All nearby lots are full'
+    : full.length ? full.join(' and ') + ' full, ' + LOTS[pick.lot].short + ' has space'
+    : LOTS[dest].short + ' has space';
+  const rows = [
+    ['Destination and vehicle read', LOTS[dest].short + ' &middot; ' + TYPES[type].label],
+    ['Free space checked, nearest lot first', checkText],
+    ['Lot handed to Google Maps', pick.lot ? tag(pick.lot) + ' set as the destination' : 'Nothing to hand over']
+  ];
+  $('steps').innerHTML = rows.map((r, i) =>
+    '<li class="' + (stage > i ? 'done' : '') + '"><span class="dot"></span><span>' + r[0] +
+    (stage > i ? '<small>' + r[1] + '</small>' : '') + '</span></li>').join('');
+}
+
+function drawRoute(key) {
+  const r = $('route');
+  if (key === lastRoute) return;
+  lastRoute = key;
+  r.style.transition = 'none';
+  r.style.strokeDashoffset = '1';
+  if (!key) return;
+  r.setAttribute('d', ROUTE[key]);
+  void r.getBoundingClientRect();
+  r.style.transition = 'stroke-dashoffset 1s ease-out';
+  r.style.strokeDashoffset = '0';
+}
+
+function renderMap(pick) {
+  const { dest, type, stage } = state;
+  for (const k in LOTS) {
+    const n = free[k][type];
+    const cls = n > 0 ? 'ok' : 'full';
+    $('pin-' + k).setAttribute('class', 'pin ' + cls);
+    const s = $('s-' + k);
+    s.setAttribute('class', 'b-stat ' + cls);
+    s.textContent = LOTS[k].lot + ' · ' + (n > 0 ? n + ' free' : 'Full');
+  }
+  const [x, y, w, h] = LOTS[dest].box;
+  const hl = $('hl');
+  hl.setAttribute('x', x); hl.setAttribute('y', y); hl.setAttribute('width', w); hl.setAttribute('height', h);
+
+  const show = stage === 3 && pick.lot;
+  drawRoute(show ? pick.lot : '');
+  const walk = $('walk');
+  if (show && pick.lot !== dest) {
+    walk.setAttribute('d', WALK[pick.lot + '>' + dest]);
+    walk.style.opacity = '1';
+  } else {
+    walk.style.opacity = '0';
+  }
+}
+
+function renderControls() {
+  $('dest').value = state.dest;
+  document.querySelectorAll('.seg button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.type === state.type)));
+  $('lotctl').innerHTML = Object.keys(LOTS).map((k) =>
+    '<div class="lot"><div class="lot-head"><b>' + tag(k) + '</b><span>' + LOTS[k].name + '</span></div>' +
+    Object.keys(TYPES).map((t) =>
+      '<div class="row"><span>' + TYPES[t].label + '</span>' +
+      '<span class="free"><strong>' + free[k][t] + '</strong> / ' + LOTS[k].cap[t] + ' free</span>' +
+      '<span class="step-btns">' +
+      '<button type="button" data-lot="' + k + '" data-type="' + t + '" data-d="-1" aria-label="Remove one free ' + TYPES[t].label + ' space at ' + LOTS[k].short + '">&minus;</button>' +
+      '<button type="button" data-lot="' + k + '" data-type="' + t + '" data-d="1" aria-label="Add one free ' + TYPES[t].label + ' space at ' + LOTS[k].short + '">+</button>' +
+      '</span></div>').join('') + '</div>'
+  ).join('');
+}
+
+function render() {
+  const pick = pickLot(state.dest, state.type);
+  renderControls();
+  renderResult(pick);
+  renderSteps(pick);
+  renderMap(pick);
+}
+
+function runCheck() {
+  timers.forEach(clearTimeout);
+  timers = [];
+  state.stage = 0;
+  render();
+  [1, 2, 3].forEach((s, i) => timers.push(setTimeout(() => { state.stage = s; render(); }, 300 + i * 450)));
+}
+
+$('dest').addEventListener('change', (e) => { state.dest = e.target.value; runCheck(); });
+$('find').addEventListener('click', runCheck);
+document.querySelector('.seg').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  state.type = b.dataset.type;
+  runCheck();
+});
+document.querySelector('.presets').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-preset]');
+  if (!b) return;
+  applyPreset(b.dataset.preset);
+  state.dest = 'vmcc';
+  runCheck();
+});
+$('lotctl').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-lot]');
+  if (!b) return;
+  const { lot, type } = b.dataset;
+  free[lot][type] = Math.min(LOTS[lot].cap[type], Math.max(0, free[lot][type] + Number(b.dataset.d)));
+  timers.forEach(clearTimeout);
+  state.stage = 3;
+  render();
+});
+
+render();
+</script>
+
+</body>
+</html>
